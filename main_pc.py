@@ -173,6 +173,7 @@ class MorseApp:
         self.label_text.config(text="")
         self.turno = "B"
         self.label_turno.config(text="Turno: Jugador B (maqueta)")
+        self.enviar_frase()
 
     def mostrar_ganador(self):
         if self.puntaje_a > self.puntaje_b:
@@ -216,6 +217,11 @@ class MorseApp:
         self.buffer.append(simbolo)
         self.update_morse()
         self.reset_timer()
+
+    def enviar_frase(self):
+        if self.serial_port and self.serial_port.is_open:
+            mensaje = f"FRASE:{self.frase_objetivo}\n"
+            self.serial_port.write(mensaje.encode("utf-8"))
 
 #Correr la aplicación
 root = tk.Tk()
