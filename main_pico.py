@@ -15,7 +15,7 @@ FILA_3_PIN = 13  # 0 1 2 3 4 5 6 7 8 9 - +
 
 UNIT_TIME = 300
 
-button = Pin(BUTTON_PIN, Pin.IN, Pin.PULL_DOWN)
+button = Pin(BUTTON_PIN, Pin.IN, Pin.PULL_UP)
 buzzer = PWM(Pin(BUZZER_PIN))
 data = Pin(DATA_PIN,  Pin.OUT)
 clock = Pin(CLOCK_PIN, Pin.OUT)
@@ -125,10 +125,10 @@ while True:
             frase = linea[6:]
             reproducir_frase(frase)
 
-    if button.value() == 1:
+    if button.value() == 0:
         press_start = utime.ticks_ms()
         buzzer_on()
-        while button.value() == 1:
+        while button.value() == 0:
             utime.sleep_ms(10)
         buzzer_off()
         duration = utime.ticks_diff(utime.ticks_ms(), press_start)
