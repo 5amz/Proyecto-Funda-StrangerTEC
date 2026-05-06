@@ -21,6 +21,8 @@ MORSE = {
     ".-.-.":"+", "-....-": "-"
 }
 
+TOTAL_RONDAS = 2
+
 #Clase para la pantalla de inicio
 class PantallaInicio(tk.Frame):
     def __init__(self, parent, app):
@@ -52,6 +54,11 @@ class PantallaJuego(tk.Frame):
         self.puntaje_a = 0
         self.puntaje_b = 0
         self.turno = "A"
+        self.ronda_actual = 0
+        self.ronda_curso = False
+
+        self.label_ronda = tk.Label(self, text=f"Ronda 1 de {TOTAL_RONDAS}")
+        self.label_ronda.pack()
 
         self.label_turno = tk.Label(self, text="Turno: Jugador A (teclado)")
         self.label_turno.pack(pady=5)
@@ -82,23 +89,29 @@ class PantallaJuego(tk.Frame):
         frame_botones = tk.Frame(self)
         frame_botones.pack(pady=10)
 
-        self.btn_nueva = tk.Button(frame_botones, text="Nueva ronda", command=self.nueva_ronda)
-        self.btn_nueva.pack(pady=10)
+        self.btn_randomizar = tk.Button(frame_botones, text="Randomizar frase",command=self.randomizar_frase)
+        self.btn_randomizar.pack(side=tk.LEFT, padx=5)
+
+        self.btn_nueva = tk.Button(frame_botones, text="Nueva ronda", command=self.nueva_ronda, state=tk.DISABLED)
+        self.btn_nueva.pack(side=tk.LEFT, padx=5)
 
         self.volver_menu = tk.Button(frame_botones, text="Menú principal", command=self.app.volver_inicio)
         self.volver_menu.pack(side=tk.LEFT, padx=5)
 
         #Bindings del space
-        parent.bind("<KeyPress-space>", self.key_press)
-        parent.bind("<KeyRelease-space>", self.key_release)
+        #parent.bind("<KeyPress-space>", self.key_press)
+        #parent.bind("<KeyRelease-space>", self.key_release)
 
     def iniciar(self):
         self.puntaje_a = 0
         self.puntaje_b = 0
+        self.ronda_actual = 0
         self.turno = "A"
+        self.ronda_curso = False
         self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
         self.label_turno.config(text="Turno: Jugador A (teclado)")
         self.label_resultado.config(text="")
+        self.desbloquear_input()
         self.nueva_ronda()
         self.conectar_serial()
 
@@ -129,6 +142,19 @@ class PantallaJuego(tk.Frame):
 
         self.press_time = None
         self.is_pressed = False
+
+    def bloquear_input(self):
+        self.app.root.unbind("<KeyPress-space>")
+        self.app.root.unbind("<KeyRelease-space>")
+
+    def desbloquear_input(self):
+        self.app.root.bind("<KeyPress-space>", self.key_press)
+        self.app.root.bind("<KeyRelease-space>", self.key_release)
+
+    def randomizar_frase(self):
+        if not self.ronda_curso:
+            self.frase_objetivo = random.choice(self.app.frases)
+            self.label_objetivo.config(text=f"Escriba en Morse: {self.frase_objetivo}")
 
     def reset_timer(self):
         if self.timer:
@@ -162,6 +188,8 @@ class PantallaJuego(tk.Frame):
         total = len(objetivo.replace(" ", ""))
 
         if self.turno == "A":
+            self.ronda_en_curso = True
+            self.btn_randomizar.config(state=tk.DISABLED)
             self.puntaje_a += correctos
             self.label_resultado.config(text=f"Jugador A: {respuesta}  →  {correctos}/{total} letras bien")
             self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
@@ -172,6 +200,11 @@ class PantallaJuego(tk.Frame):
             self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
             self.mostrar_ganador()
 
+            if self.ronda_actual >= TOTAL_RONDAS:
+                self.app.mostrar_final(self.puntaje_a, self.puntaje_b)
+            else:
+                self.mostrar_ganador()
+
     def add_space(self):
         if self.text and self.text[-1] != " ":
             self.text.append(" ")
@@ -181,6 +214,8 @@ class PantallaJuego(tk.Frame):
         self.label_morse.config(text="".join(self.buffer))
 
     def nueva_ronda(self):
+        self.ronda_actual += 1
+        self.label_ronda.config(text=f"Ronda {self.ronda_actual}/{TOTAL_RONDAS}")
         self.frase_objetivo = random.choice(self.app.frases)
         self.label_objetivo.config(text=f"Escriba en Morse: {self.frase_objetivo}")
         self.text = []
@@ -188,9 +223,14 @@ class PantallaJuego(tk.Frame):
         self.label_morse.config(text="")
         self.label_text.config(text="")
         self.label_resultado.config(text="")
+        self.label_turno.config(text="Turno: Jugador A (teclado)")
+        self.btn_nueva.config(state=tk.DISABLED)
+        self.btn_randomizar.config(state=tk.NORMAL)
+        self.turno = "A"
+        self.desbloquear_input()
         if self.timer:
             self.app.root.after_cancel(self.timer)
-        if self.word_timer:
+        if hasattr(self, "word_timer") and self.word_timer:
             self.app.root.after_cancel(self.word_timer)
 
     def cambiar_turno(self):
@@ -200,18 +240,21 @@ class PantallaJuego(tk.Frame):
         self.label_text.config(text="")
         self.turno = "B"
         self.label_turno.config(text="Turno: Jugador B (maqueta)")
+        self.bloquear_input()
         self.enviar_frase()
 
     def mostrar_ganador(self):
         if self.puntaje_a > self.puntaje_b:
-            ganador = "¡Ganó Jugador A!"
+            ganador = "¡Va ganando el Jugador A!"
         elif self.puntaje_b > self.puntaje_a:
-            ganador = "¡Ganó Jugador B!"
+            ganador = "¡Va ganando el Jugador B!"
         else:
-            ganador = "¡Empate!"
-        self.label_resultado.config(text=f"{ganador}  —  A: {self.puntaje_a} | B: {self.puntaje_b}")
+            ganador = "¡Van empate!"
+        self.label_resultado.config(text=f"{ganador}  —  A: {self.puntaje_a} | B: {self.puntaje_b} - Ronda {self.ronda_actual}/{TOTAL_RONDAS}")
         self.turno = "A"
-        self.label_turno.config(text="Turno: Jugador A (teclado) — Presione Nueva ronda")
+        self.bloquear_input()
+        self.btn_nueva.config(state=tk.NORMAL)
+        self.btn_randomizar.config(state=tk.DISABLED)
 
     def conectar_serial(self):
         if self.serial_port and self.serial_port.is_open:
@@ -309,23 +352,57 @@ class PantallaJuego(tk.Frame):
         tk.Button(frame_btns, text="Guardar", command=guardar, bg="green", fg="white", width=10).pack(side=tk.LEFT, padx=5)
         tk.Button(frame_btns, text="Cancelar", command=cancelar, bg="red", fg="white", width=10).pack(side=tk.LEFT, padx=5)
 
+#Clase para la patalla de los resultados
+class PantallaFinal(tk.Frame):
+    def __init__(self, parent, app):
+        super().__init__(parent)
+        self.app = app
+
+        tk.Label(self, text="JUEGO TERMINADO", fg="red").pack(pady=30)
+
+        self.label_puntaje_a = tk.Label(self, text="")
+        self.label_puntaje_a.pack(pady=5)
+
+        self.label_puntaje_b = tk.Label(self, text="")
+        self.label_puntaje_b.pack(pady=5)
+
+        self.label_ganador = tk.Label(self, text="")
+        self.label_ganador.pack(pady=20)
+
+        tk.Button(self, text="Jugar de nuevo", width=20,command=self.app.iniciar_juego).pack(pady=10)
+
+        tk.Button(self, text="Menú principal", width=20, command=self.app.volver_inicio).pack(pady=5)
+
+    def mostrar_resultados(self, puntaje_a, puntaje_b):
+        self.label_puntaje_a.config(text=f"Jugador A: {puntaje_a} puntos")
+        self.label_puntaje_b.config(text=f"Jugador B: {puntaje_b} puntos")
+
+        if puntaje_a > puntaje_b:
+            self.label_ganador.config(text="¡Ganó el Jugador A!")
+        elif puntaje_b > puntaje_a:
+            self.label_ganador.config(text="¡Ganó el Jugador B!")
+        else:
+            self.label_ganador.config(text="¡Empate!")
+
 #Clase principal de la aplicación
 class MorseApp:
     def __init__(self, root):
         self.root = root
         self.root.title("StrangerTEC - Morse")
-        self.root.geometry("500x400")
+        self.root.geometry("500x500")
 
         self.frases = FRASES[:]  #Copia de la lista original para modificarla sin afectar la constante
 
         self.pantalla_inicio = PantallaInicio(root, self)
         self.pantalla_juego  = PantallaJuego(root, self)
+        self.pantalla_final  = PantallaFinal(root, self)
 
         self.mostrar(self.pantalla_inicio)
 
     def mostrar(self, pantalla):
         self.pantalla_inicio.pack_forget()
         self.pantalla_juego.pack_forget()
+        self.pantalla_final.pack_forget()
         pantalla.pack(fill=tk.BOTH, expand=True)
 
     def iniciar_juego(self):
@@ -334,6 +411,10 @@ class MorseApp:
 
     def volver_inicio(self):
         self.mostrar(self.pantalla_inicio)
+
+    def mostrar_final(self, puntaje_a, puntaje_b):
+        self.pantalla_final.mostrar_resultados(puntaje_a, puntaje_b)
+        self.mostrar(self.pantalla_final)
 
     def editor_frases(self):
         win = tk.Toplevel(self.root)
