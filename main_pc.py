@@ -21,7 +21,7 @@ MORSE = {
     ".-.-.":"+", "-....-": "-"
 }
 
-TOTAL_RONDAS = 2
+TOTAL_RONDAS = 3
 
 #Clase para la pantalla de inicio
 class PantallaInicio(tk.Frame):
@@ -107,6 +107,7 @@ class PantallaJuego(tk.Frame):
         self.puntaje_b = 0
         self.ronda_actual = 0
         self.turno = "A"
+        self.fase = 1
         self.ronda_curso = False
         self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
         self.label_turno.config(text="Turno: Jugador A (teclado)")
@@ -116,7 +117,8 @@ class PantallaJuego(tk.Frame):
         self.conectar_serial()
 
     def key_press(self, event):
-        if self.turno != "A":
+        jugador_teclado = "A" if self.fase == 1 else "B"
+        if self.turno != jugador_teclado:
             return
         if self.is_pressed:
             return
@@ -124,7 +126,8 @@ class PantallaJuego(tk.Frame):
         self.press_time = time.time()
 
     def key_release(self, event):
-        if self.turno != "A":
+        jugador_teclado = "A" if self.fase == 1 else "B"
+        if self.turno != jugador_teclado:
             return
         if not self.is_pressed:
             return
@@ -187,19 +190,27 @@ class PantallaJuego(tk.Frame):
         correctos = sum(1 for a, b in zip(objetivo.replace(" ", ""), respuesta.replace(" ", "")) if a == b) #Combinar ambas frases y comparar las letras
         total = len(objetivo.replace(" ", ""))
 
-        if self.turno == "A":
-            self.ronda_en_curso = True
+        if self.fase == 1 and self.turno == "A":
+            self.ronda_curso = True
             self.btn_randomizar.config(state=tk.DISABLED)
             self.puntaje_a += correctos
             self.label_resultado.config(text=f"Jugador A: {respuesta}  →  {correctos}/{total} letras bien")
             self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
             self.cambiar_turno()
-        else:
+        elif self.fase == 1 and self.turno == "B":
             self.puntaje_b += correctos
             self.label_resultado.config(text=f"Jugador B: {respuesta}  →  {correctos}/{total} letras bien")
             self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
-            self.mostrar_ganador()
-
+            self.cambiar_fase()
+        elif self.fase == 2 and self.turno == "B":
+            self.puntaje_b += correctos
+            self.label_resultado.config(text=f"Jugador B: {respuesta}  →  {correctos}/{total} letras bien")
+            self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
+            self.cambiar_turno()
+        elif self.fase == 2 and self.turno == "A":
+            self.puntaje_a += correctos
+            self.label_resultado.config(text=f"Jugador A: {respuesta}  →  {correctos}/{total} letras bien")
+            self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
             if self.ronda_actual >= TOTAL_RONDAS:
                 self.app.mostrar_final(self.puntaje_a, self.puntaje_b)
             else:
@@ -215,6 +226,8 @@ class PantallaJuego(tk.Frame):
 
     def nueva_ronda(self):
         self.ronda_actual += 1
+        self.fase = 1
+        self.ronda_curso = False
         self.label_ronda.config(text=f"Ronda {self.ronda_actual}/{TOTAL_RONDAS}")
         self.frase_objetivo = random.choice(self.app.frases)
         self.label_objetivo.config(text=f"Escriba en Morse: {self.frase_objetivo}")
@@ -227,6 +240,7 @@ class PantallaJuego(tk.Frame):
         self.btn_nueva.config(state=tk.DISABLED)
         self.btn_randomizar.config(state=tk.NORMAL)
         self.turno = "A"
+        self.label_turno.config(text="Turno: Jugador A (teclado) — Fase 1")
         self.desbloquear_input()
         if self.timer:
             self.app.root.after_cancel(self.timer)
@@ -238,10 +252,16 @@ class PantallaJuego(tk.Frame):
         self.buffer = []
         self.label_morse.config(text="")
         self.label_text.config(text="")
-        self.turno = "B"
-        self.label_turno.config(text="Turno: Jugador B (maqueta)")
-        self.bloquear_input()
-        self.enviar_frase()
+
+        if self.fase == 1:
+            self.turno = "B"
+            self.label_turno.config(text="Turno: Jugador B (maqueta) — Fase 1")
+            self.bloquear_input()
+            self.enviar_frase()
+        else:
+            self.turno = "A"
+            self.label_turno.config(text="Turno: Jugador A (maqueta) — Fase 2")
+            self.bloquear_input()
 
     def mostrar_ganador(self):
         if self.puntaje_a > self.puntaje_b:
@@ -252,9 +272,22 @@ class PantallaJuego(tk.Frame):
             ganador = "¡Van empate!"
         self.label_resultado.config(text=f"{ganador}  —  A: {self.puntaje_a} | B: {self.puntaje_b} - Ronda {self.ronda_actual}/{TOTAL_RONDAS}")
         self.turno = "A"
+        self.fase = 1
         self.bloquear_input()
         self.btn_nueva.config(state=tk.NORMAL)
         self.btn_randomizar.config(state=tk.DISABLED)
+
+    def cambiar_fase(self):
+        self.fase = 2
+        self.text = []
+        self.buffer = []
+        self.label_morse.config(text="")
+        self.label_text.config(text="")
+        self.turno = "B"
+        self.label_turno.config(text="Turno: Jugador B (teclado) — Fase 2")
+        self.label_resultado.config(text="— Fase 2: ahora B usa el teclado y A la maqueta —")
+        self.desbloquear_input()
+        self.enviar_frase()
 
     def conectar_serial(self):
         if self.serial_port and self.serial_port.is_open:
@@ -284,7 +317,8 @@ class PantallaJuego(tk.Frame):
                 break
 
     def recibir_simbolo(self, simbolo: str):
-        if self.turno != "B":
+        jugador_maqueta = "B" if self.fase == 1 else "A"
+        if self.turno != jugador_maqueta:
             return
         self.buffer.append(simbolo)
         self.update_morse()
