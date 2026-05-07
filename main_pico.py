@@ -5,6 +5,7 @@ import select
 
 BUTTON_PIN = 16
 BUZZER_PIN = 5
+DIPSWITCH_PIN = 17
 
 DATA_PIN  = 27
 CLOCK_PIN = 26
@@ -17,6 +18,7 @@ UNIT_TIME = 300
 
 button = Pin(BUTTON_PIN, Pin.IN, Pin.PULL_UP)
 buzzer = PWM(Pin(BUZZER_PIN))
+dipswitch = Pin(DIPSWITCH_PIN, Pin.IN, Pin.PULL_DOWN)
 data = Pin(DATA_PIN,  Pin.OUT)
 clock = Pin(CLOCK_PIN, Pin.OUT)
 fila1 = Pin(FILA_1_PIN, Pin.OUT)
@@ -128,7 +130,15 @@ def reproducir_frase(frase, modo):
         if i < (len(frase) - 1) and frase[i + 1] != ' ':
             utime.sleep_ms(GAP_CARACTER)
 
+modo_juego = "simple" if dipswitch.value() == 1 else "escucha"
+print(f"MODO:{modo_juego}")
+
 while True:
+    nuevo_modo = "simple" if dipswitch.value() == 1 else "escucha"
+    if nuevo_modo != modo_juego:
+        modo_juego = nuevo_modo
+        print(f"MODO:{modo_juego}")
+
     if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
         linea = sys.stdin.readline().strip()
         if linea.startswith("FRASE:"):
