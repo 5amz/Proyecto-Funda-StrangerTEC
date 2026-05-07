@@ -21,6 +21,8 @@ MORSE = {
     ".-.-.":"+", "-....-": "-"
 }
 
+MORSE_INV = {v: k for k, v in MORSE.items()}
+
 TOTAL_RONDAS = 3
 
 #Clase para la pantalla de inicio
@@ -32,9 +34,20 @@ class PantallaInicio(tk.Frame):
         tk.Label(self, text="StrangerTEC", fg="red").pack(pady=30)
         tk.Label(self, text="Morse Translator", fg="gray").pack()
 
-        tk.Button(self, text="Iniciar juego", width=20, bg="green", fg="white", command=self.app.iniciar_juego).pack(pady=20)
+        tk.Label(self, text="Modo de presentación:").pack(pady=(15, 0))
+        self.modo_var = tk.StringVar(value="ambos")
+
+        tk.Radiobutton(self, text="Solo luces (LEDs)", variable=self.modo_var, value="leds").pack()
+        tk.Radiobutton(self, text="Solo sonido (buzzer)", variable=self.modo_var, value="sonido").pack()
+        tk.Radiobutton(self, text="Luces y sonido", variable=self.modo_var, value="ambos").pack()
+
+        tk.Button(self, text="Iniciar juego", width=20, bg="green", fg="white", command=self.iniciar).pack(pady=20)
 
         tk.Button(self, text="Editar frases", width=20, bg="orange", fg="white", command=self.app.editor_frases).pack(pady=5)
+
+    def iniciar(self):
+        self.app.presentacion = self.modo_var.get()
+        self.app.iniciar_juego()
 
 #Clase para la GIU del juego
 class PantallaJuego(tk.Frame):
@@ -47,6 +60,7 @@ class PantallaJuego(tk.Frame):
         self.unit_time = 0.3
         self.buffer = []
         self.text = []
+        self.morse_ingresado = []
         self.timer = None
         self.word_timer = None
         self.puntaje = 0
@@ -92,6 +106,9 @@ class PantallaJuego(tk.Frame):
         self.btn_randomizar = tk.Button(frame_botones, text="Randomizar frase",command=self.randomizar_frase)
         self.btn_randomizar.pack(side=tk.LEFT, padx=5)
 
+        self.btn_enviar = tk.Button(frame_botones, text="Enviar frase", command=self.enviar_frase, state=tk.DISABLED)
+        self.btn_enviar.pack(side=tk.LEFT, padx=5)
+
         self.btn_nueva = tk.Button(frame_botones, text="Nueva ronda", command=self.nueva_ronda, state=tk.DISABLED)
         self.btn_nueva.pack(side=tk.LEFT, padx=5)
 
@@ -112,7 +129,7 @@ class PantallaJuego(tk.Frame):
         self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
         self.label_turno.config(text="Turno: Jugador A (teclado)")
         self.label_resultado.config(text="")
-        self.desbloquear_input()
+        self.bloquear_input()
         self.nueva_ronda()
         self.conectar_serial()
 
@@ -159,6 +176,16 @@ class PantallaJuego(tk.Frame):
             self.frase_objetivo = random.choice(self.app.frases)
             self.label_objetivo.config(text=f"Escriba en Morse: {self.frase_objetivo}")
 
+    def enviar_frase(self):
+        if self.serial_port and self.serial_port.is_open:
+            modo = self.app.presentacion
+            mensaje = f"FRASE:{self.frase_objetivo}:{modo}\n"
+            self.serial_port.write(mensaje.encode("utf-8"))
+        self.btn_randomizar.config(state=tk.DISABLED)
+        self.btn_enviar.config(state=tk.DISABLED)
+        self.ronda_curso = True
+        self.desbloquear_input()
+
     def reset_timer(self):
         if self.timer:
             self.app.root.after_cancel(self.timer)
@@ -169,7 +196,7 @@ class PantallaJuego(tk.Frame):
     def decode_letter(self):
         code = "".join(self.buffer)
         char = MORSE.get(code, "?")
-
+        self.morse_ingresado.append(code)
         self.text.append(char)
         self.label_text.config(text="".join(self.text))
 
@@ -187,29 +214,37 @@ class PantallaJuego(tk.Frame):
     def evaluar(self):
         respuesta = "".join(self.text).strip().upper()
         objetivo  = self.frase_objetivo.upper()
-        correctos = sum(1 for a, b in zip(objetivo.replace(" ", ""), respuesta.replace(" ", "")) if a == b) #Combinar ambas frases y comparar las letras
-        total = len(objetivo.replace(" ", ""))
+
+        objetivo_limpio  = objetivo.replace(" ", "")
+        respuesta_limpia = respuesta.replace(" ", "")
+        total = len(objetivo_limpio)
+
+        correctos_texto = sum(1 for a, b in zip(objetivo_limpio, respuesta_limpia) if a == b) #Combinar ambas frases y comparar las letras
+
+        morse_esperado = [MORSE_INV.get(ch, "") for ch in objetivo.replace(" ", "")]
+        correctos_morse = sum(1 for a, b in zip(morse_esperado, self.morse_ingresado) if a == b)
+        precision = correctos_morse / total if total > 0 else 0
+
+        puntaje_ronda = round(correctos_texto + (correctos_texto * precision)) #Cada letra correcta vale 1 punto, más un bonus por la precisión del Morse
 
         if self.fase == 1 and self.turno == "A":
-            self.ronda_curso = True
-            self.btn_randomizar.config(state=tk.DISABLED)
-            self.puntaje_a += correctos
-            self.label_resultado.config(text=f"Jugador A: {respuesta}  →  {correctos}/{total} letras bien")
+            self.puntaje_a += puntaje_ronda
+            self.label_resultado.config(text=f"Jugador A: {respuesta}  →  {correctos_texto}/{total} letras  |  precisión Morse: {round(precision*100)}%  |  puntaje: {puntaje_ronda}")
             self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
             self.cambiar_turno()
         elif self.fase == 1 and self.turno == "B":
-            self.puntaje_b += correctos
-            self.label_resultado.config(text=f"Jugador B: {respuesta}  →  {correctos}/{total} letras bien")
+            self.puntaje_b += puntaje_ronda
+            self.label_resultado.config(text=f"Jugador B: {respuesta}  →  {correctos_texto}/{total} letras  |  precisión Morse: {round(precision*100)}%  |  puntaje: {puntaje_ronda}")
             self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
             self.cambiar_fase()
         elif self.fase == 2 and self.turno == "B":
-            self.puntaje_b += correctos
-            self.label_resultado.config(text=f"Jugador B: {respuesta}  →  {correctos}/{total} letras bien")
+            self.puntaje_b += puntaje_ronda
+            self.label_resultado.config(text=f"Jugador B: {respuesta}  →  {correctos_texto}/{total} letras  |  precisión Morse: {round(precision*100)}%  |  puntaje: {puntaje_ronda}")
             self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
             self.cambiar_turno()
         elif self.fase == 2 and self.turno == "A":
-            self.puntaje_a += correctos
-            self.label_resultado.config(text=f"Jugador A: {respuesta}  →  {correctos}/{total} letras bien")
+            self.puntaje_a += puntaje_ronda
+            self.label_resultado.config(text=f"Jugador A: {respuesta}  →  {correctos_texto}/{total} letras  |  precisión Morse: {round(precision*100)}%  |  puntaje: {puntaje_ronda}")
             self.label_puntaje.config(text=f"Jugador A: {self.puntaje_a}  |  Jugador B: {self.puntaje_b}")
             if self.ronda_actual >= TOTAL_RONDAS:
                 self.app.mostrar_final(self.puntaje_a, self.puntaje_b)
@@ -233,15 +268,17 @@ class PantallaJuego(tk.Frame):
         self.label_objetivo.config(text=f"Escriba en Morse: {self.frase_objetivo}")
         self.text = []
         self.buffer = []
+        self.morse_ingresado = []
         self.label_morse.config(text="")
         self.label_text.config(text="")
         self.label_resultado.config(text="")
         self.label_turno.config(text="Turno: Jugador A (teclado)")
         self.btn_nueva.config(state=tk.DISABLED)
         self.btn_randomizar.config(state=tk.NORMAL)
+        self.btn_enviar.config(state=tk.NORMAL)
         self.turno = "A"
         self.label_turno.config(text="Turno: Jugador A (teclado) — Fase 1")
-        self.desbloquear_input()
+        self.bloquear_input()
         if self.timer:
             self.app.root.after_cancel(self.timer)
         if hasattr(self, "word_timer") and self.word_timer:
@@ -250,6 +287,7 @@ class PantallaJuego(tk.Frame):
     def cambiar_turno(self):
         self.text = []
         self.buffer = []
+        self.morse_ingresado = []
         self.label_morse.config(text="")
         self.label_text.config(text="")
 
@@ -257,7 +295,6 @@ class PantallaJuego(tk.Frame):
             self.turno = "B"
             self.label_turno.config(text="Turno: Jugador B (maqueta) — Fase 1")
             self.bloquear_input()
-            self.enviar_frase()
         else:
             self.turno = "A"
             self.label_turno.config(text="Turno: Jugador A (maqueta) — Fase 2")
@@ -281,13 +318,13 @@ class PantallaJuego(tk.Frame):
         self.fase = 2
         self.text = []
         self.buffer = []
+        self.morse_ingresado = []
         self.label_morse.config(text="")
         self.label_text.config(text="")
         self.turno = "B"
         self.label_turno.config(text="Turno: Jugador B (teclado) — Fase 2")
         self.label_resultado.config(text="— Fase 2: ahora B usa el teclado y A la maqueta —")
         self.desbloquear_input()
-        self.enviar_frase()
 
     def conectar_serial(self):
         if self.serial_port and self.serial_port.is_open:
@@ -323,11 +360,6 @@ class PantallaJuego(tk.Frame):
         self.buffer.append(simbolo)
         self.update_morse()
         self.reset_timer()
-
-    def enviar_frase(self):
-        if self.serial_port and self.serial_port.is_open:
-            mensaje = f"FRASE:{self.frase_objetivo}\n"
-            self.serial_port.write(mensaje.encode("utf-8"))
 
     def editor_frases(self):
         win = tk.Toplevel(self.root)
@@ -426,6 +458,7 @@ class MorseApp:
         self.root.geometry("500x500")
 
         self.frases = FRASES[:]  #Copia de la lista original para modificarla sin afectar la constante
+        self.presentacion = "ambos"
 
         self.pantalla_inicio = PantallaInicio(root, self)
         self.pantalla_juego  = PantallaJuego(root, self)

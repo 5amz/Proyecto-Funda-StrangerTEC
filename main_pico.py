@@ -88,7 +88,7 @@ def buzzer_on():
 def buzzer_off():
     buzzer.duty_u16(0)
 
-def reproducir_frase(frase):
+def reproducir_frase(frase, modo):
     PUNTO = UNIT_TIME
     RAYA  = UNIT_TIME * 3
     GAP_SIMBOLO  = UNIT_TIME
@@ -104,16 +104,26 @@ def reproducir_frase(frase):
             continue
 
         codigo = MORSE[ch]
-        encender_led(ch)
 
         for j, simbolo in enumerate(codigo):
-            buzzer_on()
-            utime.sleep_ms(PUNTO if simbolo == '.' else RAYA)
+            duracion = PUNTO if simbolo == '.' else RAYA
+            
+            if modo in ("sonido", "ambos"):
+                buzzer_on()
+
+            if modo in ("leds", "ambos"):
+                encender_led(ch)
+
+            utime.sleep_ms(duracion)
+
             buzzer_off()
+
+            if modo == "leds":
+                utime.sleep_ms(duracion // 2)
+            leds_off()
+
             if j < (len(codigo) - 1):
                 utime.sleep_ms(GAP_SIMBOLO)
-
-        leds_off()
 
         if i < (len(frase) - 1) and frase[i + 1] != ' ':
             utime.sleep_ms(GAP_CARACTER)
@@ -122,8 +132,10 @@ while True:
     if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
         linea = sys.stdin.readline().strip()
         if linea.startswith("FRASE:"):
-            frase = linea[6:]
-            reproducir_frase(frase)
+            partes = linea[6:].split(":")
+            frase = partes[0]
+            modo  = partes[1] if len(partes) > 1 else "ambos"
+            reproducir_frase(frase, modo)
 
     if button.value() == 0:
         press_start = utime.ticks_ms()
