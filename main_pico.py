@@ -1,8 +1,23 @@
+"""
+Instituto Tecnológico de Costa Rica
+Escuela de Ingeniería en Computadores
+Fundamentos de sistemas computacionales - CE 1104
+2026
+Version del juego: 1.0
+Python 3.12.4
+EstudianteS: Samuel Ugalde Abrahams - 2026006212 y Jacky Yin Lu - 2026006278
+Proyecto StrangerTEC - Morse
+Descripción: Juego en el que compiten dos jugadores y se pone a
+prueba su capacidad para enviar y recibir mensajes en código Morse utilizando
+distintos medios (luces o sonido)
+"""
+
 from machine import Pin, PWM
 import utime
 import sys
 import select
 
+#Pines
 BUTTON_PIN = 16
 BUZZER_PIN = 5
 DIPSWITCH_PIN = 17
@@ -14,11 +29,13 @@ FILA_1_PIN = 15  # A C E G I K M O Q S U W Y
 FILA_2_PIN = 14  # B D F H J L N P R T V X Z
 FILA_3_PIN = 13  # 0 1 2 3 4 5 6 7 8 9 - +
 
-UNIT_TIME = 300
+#Tiempo base morse
+UNIT_TIME = 250
 
+#Configurar elementos de la maqueta
 button = Pin(BUTTON_PIN, Pin.IN, Pin.PULL_UP)
 buzzer = PWM(Pin(BUZZER_PIN))
-dipswitch = Pin(DIPSWITCH_PIN, Pin.IN, Pin.PULL_DOWN)
+dipswitch = Pin(DIPSWITCH_PIN, Pin.IN, Pin.PULL_UP)
 data = Pin(DATA_PIN,  Pin.OUT)
 clock = Pin(CLOCK_PIN, Pin.OUT)
 fila1 = Pin(FILA_1_PIN, Pin.OUT)
@@ -38,34 +55,41 @@ MORSE = {
     "+":'.-.-.', "-":"-....-"
 }
 
+#Orden de cada fila de leds
 ORDEN_LED_1 = list("ACEGIKMOQSUWY")
 ORDEN_LED_2 = list("BDFHJLNPRTVXZ")
 ORDEN_LED_3 = list("0123456789-+")
 
+#Fila de leds
 FILA_1 = set("ACEGIKMOQSUWY")
 FILA_2 = set("BDFHJLNPRTVXZ")
 FILA_3 = set("0123456789-+")
 
+#Función para generar un pulso de reloj
 def pulse_clock():
-    clock.value(1)
+    clock.value(1) #Activa
     utime.sleep_us(2)
-    clock.value(0)
+    clock.value(0) #Desactiva
     utime.sleep_us(2)
 
+#Función para enviar los bits al registro de corrimiento
 def send_bits(bits):
-    for bit in reversed(bits):
-        data.value(1 if bit else 0)
-        pulse_clock()
+    for bit in reversed(bits): #Envia los bits en reverso para que tengan el orden adecuado
+        data.value(1 if bit else 0) #Envia el 1 o 0
+        pulse_clock() #Genera el pulso de reloj
 
+#Apaga todos los leds
 def leds_off():
     fila1.value(0)
     fila2.value(0)
     fila3.value(0)
     send_bits([False] * 16)
 
+#Función para encender el LED correspondiente al caracter
 def encender_led(char):
     char = char.upper()
     bits = [False] * 16
+    #Busca el indice del caracter y lo activa
     if char in ORDEN_LED_1:
         bits[ORDEN_LED_1.index(char)] = True
     elif char in ORDEN_LED_2:
@@ -73,9 +97,10 @@ def encender_led(char):
     elif char in ORDEN_LED_3:
         bits[ORDEN_LED_3.index(char)] = True
 
-    leds_off()
-    send_bits(bits)
+    leds_off() #Apaga los anteriores
+    send_bits(bits) #Enciende el nuevo led
 
+    #Activa la fila correspondiente
     if char in FILA_1:
         fila1.value(1)
     elif char in FILA_2:
@@ -83,33 +108,40 @@ def encender_led(char):
     elif char in FILA_3:
         fila3.value(1)
 
+#Enciende buzzer
 def buzzer_on():
     buzzer.freq(600)
     buzzer.duty_u16(32768) #Controlar volumen
 
+#Apaga buzzer
 def buzzer_off():
     buzzer.duty_u16(0)
 
+#Función para reproducir una frase
 def reproducir_frase(frase, modo):
+    #Definir el tiempo de morse
     PUNTO = UNIT_TIME
     RAYA  = UNIT_TIME * 3
     GAP_SIMBOLO  = UNIT_TIME
     GAP_CARACTER = UNIT_TIME * 3
     GAP_PALABRA  = UNIT_TIME * 7
 
+    #Recorre cada caracter de la frase
     for i, ch in enumerate(frase.upper()):
-        if ch == ' ':
+        if ch == ' ': #Si es un espacio espera el tiempo de espacio
             leds_off()
             utime.sleep_ms(GAP_PALABRA)
             continue
-        if ch not in MORSE:
+        if ch not in MORSE: #Si no existe en morse lo ignora
             continue
 
         codigo = MORSE[ch]
 
+        #Recorre cada simbolo morse del código
         for j, simbolo in enumerate(codigo):
             duracion = PUNTO if simbolo == '.' else RAYA
             
+            #Si el modo lo permite activa elbuzzer, leds oambos
             if modo in ("sonido", "ambos"):
                 buzzer_on()
 
@@ -124,37 +156,42 @@ def reproducir_frase(frase, modo):
                 utime.sleep_ms(duracion // 2)
             leds_off()
 
+            #Espera entre simblos
             if j < (len(codigo) - 1):
                 utime.sleep_ms(GAP_SIMBOLO)
 
+        #Espera entre caracteres 
         if i < (len(frase) - 1) and frase[i + 1] != ' ':
             utime.sleep_ms(GAP_CARACTER)
 
-modo_juego = "simple" if dipswitch.value() == 1 else "escucha"
+#Lee el estado del dipswitch inicial
+modo_juego = "simple" if dipswitch.value() == 0 else "escucha"
 print(f"MODO:{modo_juego}")
 
 while True:
-    nuevo_modo = "simple" if dipswitch.value() == 1 else "escucha"
+    #Revisa si cambió el estado del dipswitch
+    nuevo_modo = "simple" if dipswitch.value() == 0 else "escucha"
     if nuevo_modo != modo_juego:
         modo_juego = nuevo_modo
         print(f"MODO:{modo_juego}")
 
-    if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
-        linea = sys.stdin.readline().strip()
+    #Revisa si llegaron datos de la pc
+    if sys.stdin in select.select([sys.stdin], [], [], 0)[0]: #Revisa si hay datos para leer
+        linea = sys.stdin.readline().strip() #Lee el mensaje
         if linea.startswith("FRASE:"):
             partes = linea[6:].split(":")
             frase = partes[0]
             modo  = partes[1] if len(partes) > 1 else "ambos"
             reproducir_frase(frase, modo)
 
-    if button.value() == 0:
-        press_start = utime.ticks_ms()
+    if button.value() == 0: #Si el botón fue presionado
+        press_start = utime.ticks_ms() 
         buzzer_on()
-        while button.value() == 0:
+        while button.value() == 0: #Espera meintras el otón esta presionado
             utime.sleep_ms(10)
         buzzer_off()
-        duration = utime.ticks_diff(utime.ticks_ms(), press_start)
-        if duration < UNIT_TIME * 2:
+        duration = utime.ticks_diff(utime.ticks_ms(), press_start) #Tiempo cuando dejo de ser presionado - tiempo cuando fue presionado
+        if duration < UNIT_TIME * 2: #Presión corta
             print("DOT")
-        else:
+        else: #Presion larga
             print("DASH")
