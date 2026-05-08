@@ -3,7 +3,7 @@ Instituto Tecnológico de Costa Rica
 Escuela de Ingeniería en Computadores
 Fundamentos de sistemas computacionales - CE 1104
 2026
-Version del juego: 1.0
+Version del juego: 1.1
 Python 3.12.4
 EstudianteS: Samuel Ugalde Abrahams - 2026006212 y Jacky Yin Lu - 2026006278
 Proyecto StrangerTEC - Morse
@@ -18,6 +18,7 @@ import random
 import threading
 import serial
 import serial.tools.list_ports
+import socket
 
 FRASES = ["SOS", "SI", "NO", "HOLA", "TEC", "MORSE", "WILL", "UPSIDE DOWN", "STRANGER", "JOYCE"]
 
@@ -219,10 +220,9 @@ class PantallaJuego(tk.Frame):
 
     #Función para enviar la frase objetivo y el modo de presentación a la maqueta a través del puerto serial
     def enviar_frase(self):
-        if self.serial_port and self.serial_port.is_open:
-            modo = self.app.presentacion
-            mensaje = f"FRASE:{self.frase_objetivo}:{modo}\n"
-            self.serial_port.write(mensaje.encode("utf-8")) #Enviar la frase y el modo a la maqueta
+        modo = self.app.presentacion
+        mensaje = f"FRASE:{self.frase_objetivo}:{modo}\n"
+        self.app.enviar_datos(mensaje) #Enviar la frase y el modo a la maqueta
         self.btn_randomizar.config(state=tk.DISABLED)
         self.btn_enviar.config(state=tk.DISABLED)
         self.ronda_curso = True
@@ -435,7 +435,9 @@ class PantallaJuego(tk.Frame):
                     return
                 except Exception:
                     pass
-        self.label_serial.config(text="Maqueta: no encontrada — solo teclado", fg="red") #No se logro conectar
+        if not self.app.conectar_wifi:
+            self.label_serial.config(text="Maqueta: no encontrada — solo teclado", fg="red") #No se logro conectar
+        self.label_serial.config(text=f"Maqueta: conectada por WiFi", fg="green")
 
     #Funcion para recibir un simbolo morse enviado desde la maqueta
     def recibir_simbolo(self, simbolo: str):
@@ -514,6 +516,9 @@ class MorseApp:
         self.frases = FRASES[:]  #Copia de la lista original para modificarla sin afectar la constante
         self.presentacion = "ambos" #Modo de presentación
         self.modo_juego = "escucha" #Modo de juego
+        self.serial_port = None
+        self.socket_con = None
+        self.modo_conexion = "serial"  # Coneecion por cable o wifi
 
         self.pantalla_inicio = PantallaInicio(root, self)
         self.pantalla_juego  = PantallaJuego(root, self)
@@ -521,34 +526,56 @@ class MorseApp:
         self.serial_port = None #Puerto serial
 
         self.mostrar(self.pantalla_inicio)
-        self.conectar_serial()
+        self.conectar_serial() #Intentar conectar al serial
+        if not self.conectar_serial(): #Intentar conectar al wifi
+            self.conectar_wifi()
+        
 
-    #Conecta con la maqueta 
+    #Conecta con la maqueta usando serial
     def conectar_serial(self):
         puertos = serial.tools.list_ports.comports()
         for p in puertos:
             if "USB" in p.description or "Pico" in p.description:
                 try:
                     self.serial_port = serial.Serial(p.device, 115200, timeout=1) #Abre la conección serial con maqueta
+                    self.modo_conexion = "serial" #Actualizamo modo de conexion
                     hilo = threading.Thread(target=self.leer_serial, daemon=True) #Inicia un hilo para leer el puerto serial sin bloquear la interfaz
                     hilo.start()
-                    return
+                    return True
                 except Exception:
                     pass
+        return False
 
     #Leer los datos del puerto serial y actualizar la interfaz según el mensaje recibido
     def leer_serial(self):
         while self.serial_port and self.serial_port.is_open:
             try:
                 linea = self.serial_port.readline().decode("utf-8").strip() #Lee una línea del puerto serial, decodifica y elimina espacios
-                if linea.startswith("MODO:"): #Actualiza modo
-                    modo = linea[5:].strip()
-                    self.root.after(0, self.modo_dipswitch, modo)
-                elif linea == "DOT": #Recibe un punto
-                    self.root.after(0, self.pantalla_juego.recibir_simbolo, ".")
-                elif linea == "DASH": #Recibe una raya
-                    self.root.after(0, self.pantalla_juego.recibir_simbolo, "-")
+                self.procesar_mensajes(linea) #Procesa el mensaje
             except Exception:
+                break
+
+    #Conectar usando wifi
+    def conectar_wifi(self):
+        try:
+            host = "192.168.1.129"
+            puerto = 1234
+            self.socket_con = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            self.socket_con.connect((host, puerto))
+            self.modo_conexion = "wifi"
+            hilo = threading.Thread(target=self.leer_wifi, daemon=True)
+            hilo.start()
+            return True
+        except Exception as e:
+            return False
+
+    #Leer mensajes wifi
+    def leer_wifi(self):
+        while True:
+            try:
+                linea = self.socket_con.recv(1024).decode() #Lee una linea del socket
+                self.procesar_mensajes(linea) #Procesa el mensaje
+            except:
                 break
 
     #Función para mostrar una pantalla y ocultar las demás
@@ -557,6 +584,32 @@ class MorseApp:
         self.pantalla_juego.pack_forget()
         self.pantalla_final.pack_forget()
         pantalla.pack(fill=tk.BOTH, expand=True)
+
+    #Enviar datos usando serial o wifi
+    def enviar_datos(self, mensaje):
+        try:
+            if self.modo_conexion == "serial":
+                if self.serial_port and self.serial_port.is_open:
+                    self.serial_port.write(mensaje.encode("utf-8"))
+
+            elif self.modo_conexion == "wifi":
+                if self.socket_con:
+                    self.socket_con.send(mensaje.encode())
+
+        except Exception as e:
+            print("Error enviando:", e)
+
+    #Procesar mensajes recibidos
+    def procesar_mensajes(self, linea):
+        linea = linea.strip()
+
+        if linea.startswith("MODO:"): #Actualiza modo
+            modo = linea[5:].strip()
+            self.root.after(0, self.modo_dipswitch, modo)
+        elif linea == "DOT": #Recibe un punto
+            self.root.after(0, self.pantalla_juego.recibir_simbolo, ".")
+        elif linea == "DASH": #Recibe raya
+            self.root.after(0, self.pantalla_juego.recibir_simbolo, "-")
 
     #Actualizar el modo de juego segun el dipswitch
     def modo_dipswitch(self, modo):

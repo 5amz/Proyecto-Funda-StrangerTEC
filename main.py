@@ -3,7 +3,7 @@ Instituto Tecnológico de Costa Rica
 Escuela de Ingeniería en Computadores
 Fundamentos de sistemas computacionales - CE 1104
 2026
-Version del juego: 1.0
+Version del juego: 1.1
 Python 3.12.4
 EstudianteS: Samuel Ugalde Abrahams - 2026006212 y Jacky Yin Lu - 2026006278
 Proyecto StrangerTEC - Morse
@@ -16,6 +16,8 @@ from machine import Pin, PWM
 import utime
 import sys
 import select
+import network
+import socket
 
 #Pines
 BUTTON_PIN = 16
@@ -64,6 +66,19 @@ ORDEN_LED_3 = list("0123456789-+")
 FILA_1 = set("ACEGIKMOQSUWY")
 FILA_2 = set("BDFHJLNPRTVXZ")
 FILA_3 = set("0123456789-+")
+
+#Conectar WiFi
+SSID = "Goated"
+PASSWORD = "AuraLaura67"
+
+wifi = network.WLAN(network.STA_IF)
+wifi.active(True)
+wifi.connect(SSID, PASSWORD)
+
+while not wifi.isconnected():
+    utime.sleep(1)
+
+print(wifi.ifconfig())
 
 #Función para generar un pulso de reloj
 def pulse_clock():
@@ -117,6 +132,13 @@ def buzzer_on():
 def buzzer_off():
     buzzer.duty_u16(0)
 
+#Envia un mensaje
+def enviar_mensaje(mensaje):
+    try:
+        cliente.send((mensaje + "\n").encode())
+    except:
+        print(mensaje)
+
 #Función para reproducir una frase
 def reproducir_frase(frase, modo):
     #Definir el tiempo de morse
@@ -164,6 +186,29 @@ def reproducir_frase(frase, modo):
         if i < (len(frase) - 1) and frase[i + 1] != ' ':
             utime.sleep_ms(GAP_CARACTER)
 
+#Servidor
+print("Creando servidor...")
+addr = socket.getaddrinfo("0.0.0.0", 1234)[0][-1]
+server = socket.socket()
+server.bind(addr)
+server.listen(1)
+
+print("Esperando conexión...")
+cliente = None
+while cliente is None:
+    try:
+        cliente, direccion = server.accept()
+        cliente.settimeout(0.1)
+        print("Cliente conectado:", direccion)
+    except:
+        utime.sleep_ms(100)
+
+for i in range(3):
+    buzzer_on()
+    utime.sleep_ms(200)
+    buzzer_off()
+    utime.sleep_ms(200)
+
 #Lee el estado del dipswitch inicial
 modo_juego = "simple" if dipswitch.value() == 0 else "escucha"
 print(f"MODO:{modo_juego}")
@@ -173,16 +218,18 @@ while True:
     nuevo_modo = "simple" if dipswitch.value() == 0 else "escucha"
     if nuevo_modo != modo_juego:
         modo_juego = nuevo_modo
-        print(f"MODO:{modo_juego}")
+        enviar_mensaje(f"MODO:{modo_juego}")
 
     #Revisa si llegaron datos de la pc
-    if sys.stdin in select.select([sys.stdin], [], [], 0)[0]: #Revisa si hay datos para leer
-        linea = sys.stdin.readline().strip() #Lee el mensaje
-        if linea.startswith("FRASE:"):
-            partes = linea[6:].split(":")
+    try:
+        datos = cliente.recv(1024).decode().strip()
+        if datos.startswith("FRASE:"):
+            partes = datos[6:].split(":")
             frase = partes[0]
             modo  = partes[1] if len(partes) > 1 else "ambos"
             reproducir_frase(frase, modo)
+    except:
+        pass
 
     if button.value() == 0: #Si el botón fue presionado
         press_start = utime.ticks_ms() 
@@ -192,6 +239,6 @@ while True:
         buzzer_off()
         duration = utime.ticks_diff(utime.ticks_ms(), press_start) #Tiempo cuando dejo de ser presionado - tiempo cuando fue presionado
         if duration < UNIT_TIME * 2: #Presión corta
-            print("DOT")
+            enviar_mensaje("DOT")
         else: #Presion larga
-            print("DASH")
+            enviar_mensaje("DASH")
