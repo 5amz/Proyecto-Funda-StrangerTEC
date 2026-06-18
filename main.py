@@ -31,6 +31,12 @@ FILA_1_PIN = 15  # A C E G I K M O Q S U W Y
 FILA_2_PIN = 14  # B D F H J L N P R T V X Z
 FILA_3_PIN = 13  # 0 1 2 3 4 5 6 7 8 9 - +
 
+#circuito incrementador
+BIT3_PIN = 22   # MSB
+BIT2_PIN = 21
+BIT1_PIN = 20
+BIT0_PIN = 19   # LSB
+
 #Tiempo base morse
 UNIT_TIME = 250
 
@@ -43,6 +49,11 @@ clock = Pin(CLOCK_PIN, Pin.OUT)
 fila1 = Pin(FILA_1_PIN, Pin.OUT)
 fila2 = Pin(FILA_2_PIN, Pin.OUT)
 fila3 = Pin(FILA_3_PIN, Pin.OUT)
+
+bit3 = Pin(BIT3_PIN, Pin.OUT)
+bit2 = Pin(BIT2_PIN, Pin.OUT)
+bit1 = Pin(BIT1_PIN, Pin.OUT)
+bit0 = Pin(BIT0_PIN, Pin.OUT)
 
 MORSE = {
     "A":'.-', "B":"-...", "C":"-.-.", "D":"-..",
@@ -68,17 +79,23 @@ FILA_2 = set("BDFHJLNPRTVXZ")
 FILA_3 = set("0123456789-+")
 
 #Conectar WiFi
-SSID = "Goated"
-PASSWORD = "AuraLaura67"
+SSID = "DJSA912"
+PASSWORD = "AslanJavier"
 
 wifi = network.WLAN(network.STA_IF)
 wifi.active(True)
 wifi.connect(SSID, PASSWORD)
 
-while not wifi.isconnected():
+print("Conectando a WiFi...")
+timeout = 15   # segundos máximo de espera
+while not wifi.isconnected() and timeout > 0:
     utime.sleep(1)
+    timeout -= 1
 
-print(wifi.ifconfig())
+if wifi.isconnected():
+    print("WiFi conectado:", wifi.ifconfig())
+else:
+    print("WiFi no disponible — modo serial USB")
 
 #Función para generar un pulso de reloj
 def pulse_clock():
@@ -138,6 +155,34 @@ def enviar_mensaje(mensaje):
         cliente.send((mensaje + "\n").encode())
     except:
         print(mensaje)
+
+#Circuito incrementador
+def test_incrementador(binario):
+    print(binario)
+    bit3.value(int(binario[0]))
+    bit2.value(int(binario[1]))
+    bit1.value(int(binario[2]))
+    bit0.value(int(binario[3]))
+
+    utime.sleep_ms(50)
+
+    entrada = int(binario, 2)
+    
+    resultado = entrada + 5
+
+    resultado_bin = "{:04b}".format(resultado & 0x0F)
+
+    print(f"TEST_RESULT: Entrada={binario} -> Salida={resultado_bin}")
+        
+def procesar_incrementador(letra):
+    ascii_val = ord(letra.upper())
+    bits_entrada = ascii_val & 0x0F   # 4 bits menos significativos
+
+    # Lee la salida del circuito físico
+    salida_dec = bit3.value()*8 + bit2.value()*4 + bit1.value()*2 + bit0.value()
+    salida_bin = f"{bit3.value()}{bit2.value()}{bit1.value()}{bit0.value()}"
+
+    enviar_mensaje(f"INCR:{letra}:{ascii_val}:{bits_entrada}:{salida_bin}")
 
 #Función para reproducir una frase
 def reproducir_frase(frase, modo):
@@ -228,7 +273,13 @@ while True:
             frase = partes[0]
             modo  = partes[1] if len(partes) > 1 else "ambos"
             reproducir_frase(frase, modo)
-    except:
+        if datos.startswith("TEST:"):
+            binario = datos[5:]
+
+            if len(binario) == 4:
+                test_incrementador(binario)
+                
+    except Exception as e:
         pass
 
     if button.value() == 0: #Si el botón fue presionado

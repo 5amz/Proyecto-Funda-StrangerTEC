@@ -133,6 +133,17 @@ class PantallaJuego(tk.Frame):
         self.label_serial = tk.Label(self, text="Maqueta: desconectada", fg="gray")
         self.label_serial.pack()
 
+        # Prueba del incrementador
+        frame_test = tk.Frame(self)
+        frame_test.pack(pady=10)
+
+        tk.Label(frame_test, text="Entrada binaria (4 bits):").pack(side=tk.LEFT)
+
+        self.entry_binario = tk.Entry(frame_test, width=8)
+        self.entry_binario.pack(side=tk.LEFT, padx=5)
+
+        tk.Button(frame_test,text="Probar",command=self.probar_incrementador).pack(side=tk.LEFT)
+
         #Botones
         frame_botones = tk.Frame(self)
         frame_botones.pack(pady=10)
@@ -148,6 +159,16 @@ class PantallaJuego(tk.Frame):
 
         self.volver_menu = tk.Button(frame_botones, text="Menú principal", command=self.app.volver_inicio) #Botón para volver al menú principal
         self.volver_menu.pack(side=tk.LEFT, padx=5)
+
+    #Probar incrementador
+    def probar_incrementador(self):
+        valor = self.entry_binario.get().strip()
+
+        if len(valor) != 4 or any(c not in "01" for c in valor):
+            self.label_resultado.config(text="Ingrese exactamente 4 bits (ej: 1011)")
+            return
+
+        self.app.enviar_datos(f"TEST:{valor}\n")
 
     #Función para reproducir la frase en la maqueta
     def iniciar(self):
@@ -558,7 +579,7 @@ class MorseApp:
     #Conectar usando wifi
     def conectar_wifi(self):
         try:
-            host = "192.168.1.129"
+            host = "192.168.68.116"
             puerto = 1234
             self.socket_con = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket_con.connect((host, puerto))
