@@ -176,10 +176,8 @@ def test_incrementador(binario):
     utime.sleep_ms(50)
 
     entrada = int(binario, 2)
-    
-    resultado = entrada + 5
-
-    resultado_bin = "{:04b}".format(resultado & 0x0F)
+    resultado = (entrada + 5) & 0x0F
+    resultado_bin = f"{resultado:04b}"
 
     print(f"TEST_RESULT: Entrada={binario} -> Salida={resultado_bin}")
     enviar_mensaje(f"TEST_RESULT:{binario}:{resultado_bin}")
@@ -188,15 +186,15 @@ def procesar_incrementador(letra):
     ascii_val = ord(letra.upper())
     entrada = ascii_val & 0x0F   # 4 bits menos significativos
 
-    binario = format(entrada, "04b")
+    binario = f"{entrada:04b}"
 
     bit3.value(int(binario[0]))
     bit2.value(int(binario[1]))
     bit1.value(int(binario[2]))
     bit0.value(int(binario[3]))
 
-    resultado = entrada + 5
-    salida_bin = "{:04b}".format(resultado & 0x0F)
+    resultado = (entrada + 5) & 0x0F
+    salida_bin = f"{resultado:04b}"
 
     enviar_mensaje(f"INCR:{letra}:{ascii_val}:{entrada}:{salida_bin}")
 
@@ -249,6 +247,7 @@ def reproducir_frase(frase, modo):
 
 #Recepcion de mensajes
 def procesar_comando(datos):
+    print(f"Recibido: '{datos}'")
     if datos.startswith("FRASE:"):
         partes = datos[6:].split(":")
         frase = partes[0]
@@ -313,7 +312,8 @@ while True:
             
             for linea in datos.splitlines():
                 procesar_comando(linea.strip())
-        except:
+        except Exception as e:
+            print(f"Error recv: {e}")
             pass
 
     # Mensajes por USB

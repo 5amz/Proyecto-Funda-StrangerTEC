@@ -255,7 +255,7 @@ class PantallaJuego(tk.Frame):
         self.label_morse.config(text="")
 
         if char != "?": #Enviar character a la pico para el incrementador
-            self.app.enviar_datos(f"LETRA:{char}\n")
+            self.app.root.after(100, lambda c=char: self.app.enviar_datos(f"LETRA:{c}\n"))
 
         if hasattr(self, "word_timer") and self.word_timer: #Revisa si tiene el atributo word_timer y si existe un timer activo
             self.app.root.after_cancel(self.word_timer) #Cancelar el timer de espacio entre palabras
@@ -593,12 +593,21 @@ class MorseApp:
 
     #Leer mensajes wifi
     def leer_wifi(self):
+        buffer = ""
         while True:
             try:
-                linea = self.socket_con.recv(1024).decode() #Lee una linea del socket
-                self.procesar_mensajes(linea) #Procesa el mensaje
+                datos = self.socket_con.recv(1024).decode()
+                if not datos:
+                    break
+                buffer += datos
+                # Procesa línea por línea
+                while "\n" in buffer:
+                    linea, buffer = buffer.split("\n", 1)
+                    linea = linea.strip()
+                    if linea:
+                        self.procesar_mensajes(linea)
             except:
-                break
+                pass
 
     #Función para mostrar una pantalla y ocultar las demás
     def mostrar(self, pantalla):
@@ -609,6 +618,7 @@ class MorseApp:
 
     #Enviar datos usando serial o wifi
     def enviar_datos(self, mensaje):
+        print(f"Enviando: {repr(mensaje)}")
         try:
             if self.modo_conexion == "serial":
                 if self.serial_port and self.serial_port.is_open:
