@@ -72,6 +72,8 @@ class PantallaInicio(tk.Frame):
 
         tk.Button(self, text="Editar frases", width=20, bg="orange", fg="white", command=self.app.editor_frases).pack(pady=5) #Botón para editar las frases del juego
 
+        tk.Button(self, text="Probar incrementador", width=20, bg="blue", fg="white", command=self.app.ventana_incrementador).pack(pady=20) #Boton para probar el incrementador
+
     #Inicia el juego
     def iniciar(self):
         self.app.presentacion = self.modo_var.get()
@@ -133,16 +135,9 @@ class PantallaJuego(tk.Frame):
         self.label_serial = tk.Label(self, text="Maqueta: desconectada", fg="gray")
         self.label_serial.pack()
 
-        # Prueba del incrementador
-        frame_test = tk.Frame(self)
-        frame_test.pack(pady=10)
-
-        tk.Label(frame_test, text="Entrada binaria (4 bits):").pack(side=tk.LEFT)
-
-        self.entry_binario = tk.Entry(frame_test, width=8)
-        self.entry_binario.pack(side=tk.LEFT, padx=5)
-
-        tk.Button(frame_test,text="Probar",command=self.probar_incrementador).pack(side=tk.LEFT)
+        #Resultado incrementador
+        self.label_incr = tk.Label(self, text="")
+        self.label_incr.pack()
 
         #Botones
         frame_botones = tk.Frame(self)
@@ -159,16 +154,6 @@ class PantallaJuego(tk.Frame):
 
         self.volver_menu = tk.Button(frame_botones, text="Menú principal", command=self.app.volver_inicio) #Botón para volver al menú principal
         self.volver_menu.pack(side=tk.LEFT, padx=5)
-
-    #Probar incrementador
-    def probar_incrementador(self):
-        valor = self.entry_binario.get().strip()
-
-        if len(valor) != 4 or any(c not in "01" for c in valor):
-            self.label_resultado.config(text="Ingrese exactamente 4 bits (ej: 1011)")
-            return
-
-        self.app.enviar_datos(f"TEST:{valor}\n")
 
     #Función para reproducir la frase en la maqueta
     def iniciar(self):
@@ -268,6 +253,9 @@ class PantallaJuego(tk.Frame):
 
         self.buffer = []
         self.label_morse.config(text="")
+
+        if char != "?": #Enviar character a la pico para el incrementador
+            self.app.enviar_datos(f"LETRA:{char}\n")
 
         if hasattr(self, "word_timer") and self.word_timer: #Revisa si tiene el atributo word_timer y si existe un timer activo
             self.app.root.after_cancel(self.word_timer) #Cancelar el timer de espacio entre palabras
@@ -491,6 +479,19 @@ class PantallaJuego(tk.Frame):
             return 1.5, f"medio ({round(wpm, 1)} WPM)"
         else: #Si WPM es menor al umbral de lento se considera lento
             return 1.0, f"lento ({round(wpm, 1)} WPM)"
+        
+    #Mostrar incrementador
+    def mostrar_incr(self, linea):
+        partes = linea[5:].split(":")
+        if len(partes) < 4:
+            return
+        letra = partes[0]
+        ascii_val = partes[1]
+        entrada = int(partes[2])
+        salida_bin = partes[3].strip()
+        entrada_bin = format(entrada, '04b') #Convertirlo a binario
+        salida = int(salida_bin, 2)
+        self.label_incr.config(text=f"Letra: {letra} | ASCII: {ascii_val} | "f"Entrada: {entrada_bin} ({entrada}) | Salida +5: {salida_bin} ({salida})")
 
 #Clase para la patalla de los resultados
 class PantallaFinal(tk.Frame):
@@ -547,10 +548,10 @@ class MorseApp:
         self.serial_port = None #Puerto serial
 
         self.mostrar(self.pantalla_inicio)
-        self.conectar_serial() #Intentar conectar al serial
-        if not self.conectar_serial(): #Intentar conectar al wifi
+        if not self.conectar_serial(): #Intentar conectar al wifi si no se conecta al serial
             self.conectar_wifi()
         
+        self.label_test_incrementador = None
 
     #Conecta con la maqueta usando serial
     def conectar_serial(self):
@@ -579,7 +580,7 @@ class MorseApp:
     #Conectar usando wifi
     def conectar_wifi(self):
         try:
-            host = "192.168.68.116"
+            host = "192.168.68.115"
             puerto = 1234
             self.socket_con = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket_con.connect((host, puerto))
@@ -631,6 +632,10 @@ class MorseApp:
             self.root.after(0, self.pantalla_juego.recibir_simbolo, ".")
         elif linea == "DASH": #Recibe raya
             self.root.after(0, self.pantalla_juego.recibir_simbolo, "-")
+        elif linea.startswith("INCR:"): #Resultado del incrementador
+            self.root.after(0, self.pantalla_juego.mostrar_incr, linea)
+        elif linea.startswith("TEST_RESULT:"): #Resultado de la prueba del incrementador
+            self.root.after(0, self.mostrar_test_incr, linea)
 
     #Actualizar el modo de juego segun el dipswitch
     def modo_dipswitch(self, modo):
@@ -704,7 +709,53 @@ class MorseApp:
         frame_btns = tk.Frame(win)
         frame_btns.pack(pady=10)
         tk.Button(frame_btns, text="Guardar", command=guardar, bg="green", fg="white", width=10).pack(side=tk.LEFT, padx=5) #Boton para guardar frases editadas
-        tk.Button(frame_btns, text="Cancelar", command=win.destroy, bg="red", fg="white", width=10).pack(side=tk.LEFT, padx=5) #Boton para cancelar la edición 
+        tk.Button(frame_btns, text="Cancelar", command=win.destroy, bg="red", fg="white", width=10).pack(side=tk.LEFT, padx=5) #Boton para cancelar la edición
+
+    def ventana_incrementador(self):
+        win = tk.Toplevel(self.root)
+        win.title("Test Incrementador")
+        win.geometry("350x250")
+        win.resizable(False, False)
+
+        tk.Label(win, text="Ingrese un número binario de 4 bits").pack(pady=10)
+
+        entrada = tk.StringVar()
+        tk.Entry(win, textvariable=entrada, width=10).pack()
+
+        resultado = tk.Label(win, text="")
+        resultado.pack(pady=10)
+
+        def probar():
+            binario = entrada.get().strip()
+
+            if len(binario) != 4 or any(c not in "01" for c in binario):
+                resultado.config(text="Ingrese exactamente 4 bits", fg="red")
+                return
+
+            self.enviar_datos(f"TEST:{binario}")
+
+        tk.Button(win,text="Probar", command=probar).pack(pady=10)
+
+        self.label_test_incrementador = resultado
+
+        def cerrar():
+            self.label_test_incrementador = None
+            win.destroy()
+
+        win.protocol("WM_DELETE_WINDOW", cerrar)
+
+    #Mostrar prueba de incrementador
+    def mostrar_test_incr(self, linea):
+        if self.label_test_incrementador is None:
+            return
+        
+        partes = linea[12:].split(":")  # quita TEST_RESULT:
+        if len(partes) < 2:
+            return
+        
+        entrada = partes[0]
+        salida  = partes[1]
+        self.label_test_incrementador.config(text=f"TEST — Entrada: {entrada} ({int(entrada,2)})  →  "f"Salida: {salida} ({int(salida,2)})")
 
 #Correr la aplicación
 root = tk.Tk()

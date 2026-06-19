@@ -97,6 +97,12 @@ if wifi.isconnected():
 else:
     print("WiFi no disponible — modo serial USB")
 
+#Funcion para leer serial
+def leer_serial():
+    if sys.stdin in select.select([sys.stdin], [], [], 0)[0]:
+        return sys.stdin.readline().strip()
+    return None
+
 #Función para generar un pulso de reloj
 def pulse_clock():
     clock.value(1) #Activa
@@ -151,9 +157,12 @@ def buzzer_off():
 
 #Envia un mensaje
 def enviar_mensaje(mensaje):
-    try:
-        cliente.send((mensaje + "\n").encode())
-    except:
+    if cliente:
+        try:
+            cliente.send((mensaje + "\n").encode())
+        except:
+            pass
+    else:
         print(mensaje)
 
 #Circuito incrementador
@@ -173,16 +182,23 @@ def test_incrementador(binario):
     resultado_bin = "{:04b}".format(resultado & 0x0F)
 
     print(f"TEST_RESULT: Entrada={binario} -> Salida={resultado_bin}")
+    enviar_mensaje(f"TEST_RESULT:{binario}:{resultado_bin}")
         
 def procesar_incrementador(letra):
     ascii_val = ord(letra.upper())
-    bits_entrada = ascii_val & 0x0F   # 4 bits menos significativos
+    entrada = ascii_val & 0x0F   # 4 bits menos significativos
 
-    # Lee la salida del circuito físico
-    salida_dec = bit3.value()*8 + bit2.value()*4 + bit1.value()*2 + bit0.value()
-    salida_bin = f"{bit3.value()}{bit2.value()}{bit1.value()}{bit0.value()}"
+    binario = format(entrada, "04b")
 
-    enviar_mensaje(f"INCR:{letra}:{ascii_val}:{bits_entrada}:{salida_bin}")
+    bit3.value(int(binario[0]))
+    bit2.value(int(binario[1]))
+    bit1.value(int(binario[2]))
+    bit0.value(int(binario[3]))
+
+    resultado = entrada + 5
+    salida_bin = "{:04b}".format(resultado & 0x0F)
+
+    enviar_mensaje(f"INCR:{letra}:{ascii_val}:{entrada}:{salida_bin}")
 
 #Función para reproducir una frase
 def reproducir_frase(frase, modo):
@@ -231,6 +247,24 @@ def reproducir_frase(frase, modo):
         if i < (len(frase) - 1) and frase[i + 1] != ' ':
             utime.sleep_ms(GAP_CARACTER)
 
+#Recepcion de mensajes
+def procesar_comando(datos):
+    if datos.startswith("FRASE:"):
+        partes = datos[6:].split(":")
+        frase = partes[0]
+        modo = partes[1] if len(partes) > 1 else "ambos"
+        reproducir_frase(frase, modo)
+
+    elif datos.startswith("TEST:"):
+        binario = datos[5:].strip()
+        if len(binario) == 4:
+            test_incrementador(binario)
+
+    elif datos.startswith("LETRA:"):
+        letra = datos[6:].strip()
+        if len(letra) == 1:
+            procesar_incrementador(letra)
+
 #Servidor
 print("Creando servidor...")
 addr = socket.getaddrinfo("0.0.0.0", 1234)[0][-1]
@@ -240,13 +274,19 @@ server.listen(1)
 
 print("Esperando conexión...")
 cliente = None
-while cliente is None:
-    try:
-        cliente, direccion = server.accept()
-        cliente.settimeout(0.1)
-        print("Cliente conectado:", direccion)
-    except:
-        utime.sleep_ms(100)
+
+if wifi.isconnected():
+    print("Esperando conexión WiFi...")
+    inicio = utime.time()
+    while cliente is None and (utime.time() - inicio) < 10:
+        try:
+            cliente, direccion = server.accept()
+            cliente.settimeout(0.1)
+            print("Cliente conectado:", direccion)
+        except:
+            utime.sleep_ms(100)
+if cliente is None:
+    print("Modo USB")
 
 for i in range(3):
     buzzer_on()
@@ -266,20 +306,23 @@ while True:
         enviar_mensaje(f"MODO:{modo_juego}")
 
     #Revisa si llegaron datos de la pc
-    try:
-        datos = cliente.recv(1024).decode().strip()
-        if datos.startswith("FRASE:"):
-            partes = datos[6:].split(":")
-            frase = partes[0]
-            modo  = partes[1] if len(partes) > 1 else "ambos"
-            reproducir_frase(frase, modo)
-        if datos.startswith("TEST:"):
-            binario = datos[5:]
+    # Mensajes por WiFi
+    if cliente:
+        try:
+            datos = cliente.recv(1024).decode()
+            
+            for linea in datos.splitlines():
+                procesar_comando(linea.strip())
+        except:
+            pass
 
-            if len(binario) == 4:
-                test_incrementador(binario)
-                
-    except Exception as e:
+    # Mensajes por USB
+    try:
+        datos = leer_serial()
+
+        if datos:
+            procesar_comando(datos)
+    except:
         pass
 
     if button.value() == 0: #Si el botón fue presionado
